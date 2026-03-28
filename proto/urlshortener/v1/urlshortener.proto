@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package urlshortener.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/joshdurbin/k8s-service-routing-url-shortener/gen/go/urlshortener/v1;urlshortenerv1";
+
+// ---- Shorten ----
+
+message ShortenURLRequest {
+  string long_url = 1;
+}
+
+message ShortenURLResponse {
+  string short_code = 1;
+  string short_url  = 2;
+}
+
+// ---- Resolve ----
+
+message ResolveURLRequest {
+  string short_code = 1;
+}
+
+message ResolveURLResponse {
+  string long_url = 1;
+}
+
+// ---- Service ----
+
+// URLShortenerService is the public URL-shortener API.
+//
+// ShortenURL is exposed via gRPC-JSON transcoding at the Istio ingress gateway:
+//   POST /shorten  {"long_url":"https://example.com"}
+//
+// ResolveURL is gRPC-only; HTTP clients use GET /{short_code} on port 8080,
+// which issues a 302 redirect handled directly by the app's HTTP server.
+service URLShortenerService {
+  rpc ShortenURL(ShortenURLRequest) returns (ShortenURLResponse) {
+    option (google.api.http) = {
+      post: "/shorten"
+      body: "*"
+    };
+  }
+
+  rpc ResolveURL(ResolveURLRequest) returns (ResolveURLResponse);
+}

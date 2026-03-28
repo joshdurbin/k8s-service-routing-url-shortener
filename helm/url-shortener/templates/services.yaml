@@ -1,0 +1,85 @@
+# ---- Headless service ----
+# Used by the StatefulSet for stable pod DNS and raft/admin peer discovery.
+# Pod DNS: <pod-name>.<headless-svc>.<namespace>.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "url-shortener.headlessServiceName" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "url-shortener.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: raft
+      port: {{ .Values.config.raftPort }}
+      targetPort: raft
+    - name: grpc-admin
+      port: {{ .Values.config.grpcAdminPort }}
+      targetPort: grpc-admin
+---
+# ---- Public service ----
+# Exposes HTTP (GET /{code} redirect) and gRPC-public (ShortenURL/ResolveURL,
+# transcoded from HTTP/JSON by the Istio Envoy filter on the ingress gateway).
+# Naming the port "grpc-public" tells Istio/Envoy to use HTTP/2 for that port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "url-shortener.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "url-shortener.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.config.httpPort }}
+      targetPort: http
+    - name: grpc-public
+      port: {{ .Values.config.grpcPublicPort }}
+      targetPort: grpc-public
+---
+# ---- Admin gRPC service ----
+# Routes admin RPCs from the Istio admin gateway.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "url-shortener.fullname" . }}-admin
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "url-shortener.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: grpc-admin
+      port: {{ .Values.config.grpcAdminPort }}
+      targetPort: grpc-admin
+---
+# ---- Metrics service ----
+# Scraped by Prometheus.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "url-shortener.fullname" . }}-metrics
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ .Values.config.metricsPort | quote }}
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "url-shortener.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.config.metricsPort }}
+      targetPort: metrics

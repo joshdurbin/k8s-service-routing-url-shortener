@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package admin.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/joshdurbin/k8s-service-routing-url-shortener/gen/go/admin/v1;adminv1";
+
+// ---- Raft state ----
+
+message RaftPeer {
+  string id      = 1;
+  string address = 2;
+  string suffrage = 3; // Voter, Nonvoter, Staging
+}
+
+message GetRaftStateRequest {}
+
+message GetRaftStateResponse {
+  string            leader       = 1;
+  string            state        = 2; // Leader, Follower, Candidate, Shutdown
+  uint64            term         = 3;
+  uint64            commit_index = 4;
+  uint64            last_index   = 5;
+  repeated RaftPeer peers        = 6;
+}
+
+// ---- Election ----
+
+message TriggerElectionRequest {}
+
+message TriggerElectionResponse {
+  bool   ok      = 1;
+  string message = 2;
+}
+
+// ---- URL listing ----
+
+message URLEntry {
+  string                    short_code  = 1;
+  string                    long_url    = 2;
+  google.protobuf.Timestamp created_at  = 3;
+}
+
+message ListURLsRequest {
+  string page_token = 1;
+  int32  page_size  = 2;
+}
+
+message ListURLsResponse {
+  repeated URLEntry urls           = 1;
+  string            next_page_token = 2;
+}
+
+// ---- Counter state ----
+
+message GetCounterStateRequest {}
+
+message GetCounterStateResponse {
+  int64 persisted_value  = 1; // value committed to DB via raft
+  int64 reserved_start   = 2; // start of current leader's reserved block (0 if follower)
+  int64 reserved_end     = 3; // end of current leader's reserved block (exclusive)
+  int64 next_to_issue    = 4; // next counter value that will be issued
+}
+
+// ---- Follow stats ----
+
+message GetFollowStatsRequest {
+  string short_code = 1;
+}
+
+message GetFollowStatsResponse {
+  string                    short_code   = 1;
+  int64                     follow_count = 2;
+  google.protobuf.Timestamp first_follow = 3;
+  google.protobuf.Timestamp last_follow  = 4;
+}
+
+// ---- Internal: record a follow event (called by followers forwarding to leader) ----
+
+message RecordFollowRequest {
+  string short_code = 1;
+  int64  at         = 2; // Unix timestamp
+}
+
+message RecordFollowResponse {
+  bool ok = 1;
+}
+
+// ---- Internal cluster join (used by new pods on startup) ----
+
+message JoinClusterRequest {
+  string node_id  = 1;
+  string raft_addr = 2; // host:port for raft TCP transport
+}
+
+message JoinClusterResponse {
+  bool   ok      = 1;
+  string message = 2;
+}
+
+// ---- URL listing with stats ----
+
+message URLEntryWithStats {
+  string                    short_code   = 1;
+  string                    long_url     = 2;
+  google.protobuf.Timestamp created_at   = 3;
+  int64                     follow_count = 4;
+  google.protobuf.Timestamp first_follow = 5;
+  google.protobuf.Timestamp last_follow  = 6;
+}
+
+message ListURLsWithStatsRequest {
+  string page_token = 1;
+  int32  page_size  = 2;
+}
+
+message ListURLsWithStatsResponse {
+  repeated URLEntryWithStats urls            = 1;
+  string                     next_page_token = 2;
+  int64                      total_count     = 3;
+  int32                      page_size       = 4;
+}
+
+// ---- Delete URL ----
+
+message DeleteURLRequest {
+  string short_code = 1;
+}
+
+message DeleteURLResponse {
+  bool ok = 1;
+}
+
+// ---- Admin service ----
+
+service AdminService {
+  // Raft introspection
+  rpc GetRaftState(GetRaftStateRequest) returns (GetRaftStateResponse) {
+    option (google.api.http) = { get: "/admin/v0/cluster" };
+  }
+  rpc TriggerElection(TriggerElectionRequest) returns (TriggerElectionResponse) {
+    option (google.api.http) = { post: "/admin/v0/trigger-election" body: "*" };
+  }
+
+  // Data access
+  rpc ListURLs(ListURLsRequest)                   returns (ListURLsResponse);
+  rpc ListURLsWithStats(ListURLsWithStatsRequest) returns (ListURLsWithStatsResponse) {
+    option (google.api.http) = { get: "/admin/v0/urls" };
+  }
+  rpc DeleteURL(DeleteURLRequest) returns (DeleteURLResponse) {
+    option (google.api.http) = { post: "/admin/v0/delete" body: "*" };
+  }
+  rpc GetCounterState(GetCounterStateRequest) returns (GetCounterStateResponse);
+  rpc GetFollowStats(GetFollowStatsRequest)   returns (GetFollowStatsResponse);
+
+  // Internal: called by new pods to join the cluster
+  rpc JoinCluster(JoinClusterRequest) returns (JoinClusterResponse);
+
+  // Internal: called by followers to forward follow-stat recording to the leader
+  rpc RecordFollow(RecordFollowRequest) returns (RecordFollowResponse);
+}

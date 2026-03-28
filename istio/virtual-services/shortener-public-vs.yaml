@@ -1,0 +1,78 @@
+# See TEACHING.md for detailed explanation
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: url-shortener-ingress
+  namespace: url-shortener
+spec:
+  hosts: ["*"]
+  gateways: [url-shortener-gateway]
+  http:
+    - name: shorten-write
+      match:
+        - method: { exact: POST }
+          uri: { exact: /shorten }
+      route:
+        - destination:
+            host: url-shortener
+            subset: leader
+            port: { number: 9092 }
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 4s
+        retryOn: 5xx,connect-failure,reset,retriable-4xx
+
+    - name: resolve-read
+      match:
+        - method: { exact: GET }
+          uri: { regex: "^/[A-Za-z0-9]{8}$" }
+      route:
+        - destination:
+            host: url-shortener
+            subset: follower
+            port: { number: 8080 }
+      timeout: 5s
+      retries:
+        attempts: 2
+        perTryTimeout: 3s
+        retryOn: 5xx,connect-failure,reset
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: url-shortener-mesh
+  namespace: url-shortener
+spec:
+  hosts: [url-shortener]
+  gateways: [mesh]
+  http:
+    - name: shorten-write
+      match:
+        - method: { exact: POST }
+          uri: { exact: /shorten }
+      route:
+        - destination:
+            host: url-shortener
+            subset: leader
+            port: { number: 9092 }
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 4s
+        retryOn: 5xx,connect-failure,reset,retriable-4xx
+
+    - name: resolve-read
+      match:
+        - method: { exact: GET }
+          uri: { regex: "^/[A-Za-z0-9]{8}$" }
+      route:
+        - destination:
+            host: url-shortener
+            subset: follower
+            port: { number: 8080 }
+      timeout: 5s
+      retries:
+        attempts: 2
+        perTryTimeout: 3s
+        retryOn: 5xx,connect-failure,reset

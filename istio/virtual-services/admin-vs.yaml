@@ -1,0 +1,46 @@
+# See TEACHING.md for detailed explanation
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: url-shortener-admin-ingress
+  namespace: url-shortener
+spec:
+  hosts: ["*"]
+  gateways: [url-shortener-gateway-admin]
+  http:
+    - name: admin-grpc
+      match:
+        - uri: { prefix: /admin.v1.AdminService }
+      route:
+        - destination:
+            host: url-shortener-admin
+            port: { number: 9090 }
+            subset: leader
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: 5xx,connect-failure,reset,unavailable
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: url-shortener-admin-mesh
+  namespace: url-shortener
+spec:
+  hosts: [url-shortener-admin]
+  gateways: [mesh]
+  http:
+    - name: admin-grpc
+      match:
+        - uri: { prefix: /admin.v1.AdminService }
+      route:
+        - destination:
+            host: url-shortener-admin
+            port: { number: 9090 }
+            subset: leader
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: 5xx,connect-failure,reset,unavailable

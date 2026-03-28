@@ -1,0 +1,42 @@
+# See TEACHING.md for detailed explanation
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: url-shortener
+  namespace: url-shortener
+spec:
+  host: url-shortener
+  trafficPolicy:
+    connectionPool:
+      http:
+        http2MaxRequests: 200
+        h2UpgradePolicy: UPGRADE
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+    - name: leader
+      labels:
+        raft-role: leader
+    - name: follower
+      labels:
+        raft-role: follower
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: url-shortener-admin
+  namespace: url-shortener
+spec:
+  host: url-shortener-admin
+  trafficPolicy:
+    connectionPool:
+      http:
+        http2MaxRequests: 50
+        h2UpgradePolicy: UPGRADE
+  subsets:
+    - name: leader
+      labels:
+        raft-role: leader

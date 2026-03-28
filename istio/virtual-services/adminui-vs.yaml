@@ -1,0 +1,32 @@
+# See TEACHING.md for detailed explanation
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: url-shortener-adminui
+  namespace: url-shortener
+spec:
+  hosts: ["*"]
+  gateways: [url-shortener-gateway-admin]
+  http:
+    - name: admin-api
+      match:
+        - port: 8082
+          uri: { prefix: /admin/v0/ }
+      route:
+        - destination:
+            host: url-shortener-admin
+            port: { number: 9090 }
+            subset: leader
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: connect-failure,reset,unavailable,5xx
+    - name: admin-ui
+      match:
+        - port: 8082
+      route:
+        - destination:
+            host: url-shortener-adminui
+            port: { number: 80 }
+      timeout: 30s

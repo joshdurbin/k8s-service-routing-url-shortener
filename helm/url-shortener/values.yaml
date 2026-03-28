@@ -1,0 +1,74 @@
+replicaCount: 3
+
+image:
+  registry: localhost
+  repository: url-shortener
+  tag: latest
+  pullPolicy: Never   # Docker Desktop shares the local daemon
+
+namespace:
+  name: url-shortener
+  create: true
+
+config:
+  httpPort: 8080
+  grpcPublicPort: 9092
+  grpcAdminPort: 9090
+  metricsPort: 8081
+  raftPort: 9091
+  # publicHost is embedded in short_url responses from the gRPC ShortenURL RPC.
+  # Set to the externally visible hostname of the Istio ingress gateway.
+  publicHost: "localhost"
+  raftDataDir: /data/raft
+  sqlitePath: /data/db.sqlite
+  counterBlockSize: 100
+  # shortCodeXorKey is intentionally unset here — the binary's default is used.
+  # Override by setting SHORT_CODE_XOR_KEY in extraEnv below.
+  otelEndpoint: otel-collector.url-shortener.svc.cluster.local:4317
+  logLevel: info
+
+  # Raft consensus tuning — all optional, defaults match hashicorp/raft's own defaults.
+  # Increase heartbeat/election timeouts in high-latency or noisy environments.
+  raftHeartbeatTimeout: 1s
+  raftElectionTimeout: 1s
+  raftCommitTimeout: 50ms
+  raftMaxAppendEntries: 64
+  raftTrailingLogs: 10240
+  raftSnapshotInterval: 120s
+  raftSnapshotThreshold: 8192
+
+  # Cluster operation tuning.
+  raftApplyTimeout: 10s       # deadline for Apply, AddVoter, RemoveServer
+  raftReconcileInterval: 15s  # how often the leader reconciles K8s Endpoints → raft voters
+  raftJoinRetryInterval: 3s   # delay between join attempts on a new pod
+  raftJoinMaxRetries: 30      # max join attempts before giving up
+
+adminui:
+  # SvelteKit nginx frontend — serves the SPA only (static files).
+  # Admin API calls (/admin/v0/) are routed by Istio to the StatefulSet's
+  # AdminService gRPC endpoint via grpc_json_transcoder on port 8082.
+  replicaCount: 1
+  image:
+    registry: localhost
+    repository: url-shortener-adminui
+    tag: latest
+    pullPolicy: Never
+
+storage:
+  size: 1Gi
+  storageClassName: ""   # "" = use cluster default
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Extra arbitrary env vars injected into the container (e.g., SECRET overrides).
+# Example:
+#   extraEnv:
+#     - name: SHORT_CODE_XOR_KEY
+#       value: "9876543210"
+extraEnv: []

@@ -1,0 +1,21 @@
+# See TEACHING.md for detailed explanation
+# Requires: make istio-patch-admin-port && make istio-patch-adminui-port
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: url-shortener-gateway-admin
+  namespace: url-shortener
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 9090
+        name: grpc-admin
+        protocol: GRPC
+      hosts: ["*"]
+    - port:
+        number: 8082
+        name: http-admin-ui
+        protocol: HTTP
+      hosts: ["*"]

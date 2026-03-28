@@ -1,0 +1,36 @@
+# gRPC-JSON transcoder for AdminService. See TEACHING.md.
+# Apply with: make envoyfilter-admin-apply
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: urlshortener-admin-grpc-transcoder
+  namespace: istio-system
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: 8082
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.grpc_json_transcoder
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_json_transcoder.v3.GrpcJsonTranscoder
+            proto_descriptor_bin: __DESCRIPTOR_B64__
+            services: [admin.v1.AdminService]
+            print_options:
+              add_whitespace: true
+              always_print_primitive_fields: true
+              preserve_proto_field_names: true
+            request_validation_options:
+              reject_unknown_method: false

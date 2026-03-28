@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "url-shortener.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "url-shortener.headlessServiceName" . }}
+  replicas: {{ .Values.replicaCount }}
+  # OrderedReady ensures pod-0 bootstraps before pod-1/2 attempt to join.
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "url-shortener.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "url-shortener.selectorLabels" . | nindent 8 }}
+        app: url-shortener
+        version: v1
+        # Initial role — the app patches this to "leader" after election.
+        raft-role: follower
+      annotations:
+        # Force pod restart on config change (checksum of values).
+        checksum/config: {{ toJson .Values.config | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "url-shortener.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: url-shortener
+          image: {{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["url-shortener", "serve"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.httpPort }}
+            - name: grpc-public
+              containerPort: {{ .Values.config.grpcPublicPort }}
+            - name: grpc-admin
+              containerPort: {{ .Values.config.grpcAdminPort }}
+            - name: metrics
+              containerPort: {{ .Values.config.metricsPort }}
+            - name: raft
+              containerPort: {{ .Values.config.raftPort }}
+          env:
+            # ---- Ports & storage ----
+            - name: HTTP_PORT
+              value: {{ .Values.config.httpPort | quote }}
+            - name: GRPC_PUBLIC_PORT
+              value: {{ .Values.config.grpcPublicPort | quote }}
+            - name: GRPC_ADMIN_PORT
+              value: {{ .Values.config.grpcAdminPort | quote }}
+            - name: PUBLIC_HOST
+              value: {{ .Values.config.publicHost | quote }}
+            - name: METRICS_PORT
+              value: {{ .Values.config.metricsPort | quote }}
+            - name: RAFT_PORT
+              value: {{ .Values.config.raftPort | quote }}
+            - name: RAFT_DATA_DIR
+              value: {{ .Values.config.raftDataDir | quote }}
+            - name: SQLITE_PATH
+              value: {{ .Values.config.sqlitePath | quote }}
+            # ---- URL shortener behaviour ----
+            - name: COUNTER_BLOCK_SIZE
+              value: {{ .Values.config.counterBlockSize | quote }}
+            # ---- Observability ----
+            - name: OTEL_ENDPOINT
+              value: {{ .Values.config.otelEndpoint | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            # ---- Raft consensus tuning ----
+            - name: RAFT_HEARTBEAT_TIMEOUT
+              value: {{ .Values.config.raftHeartbeatTimeout | quote }}
+            - name: RAFT_ELECTION_TIMEOUT
+              value: {{ .Values.config.raftElectionTimeout | quote }}
+            - name: RAFT_COMMIT_TIMEOUT
+              value: {{ .Values.config.raftCommitTimeout | quote }}
+            - name: RAFT_MAX_APPEND_ENTRIES
+              value: {{ .Values.config.raftMaxAppendEntries | quote }}
+            - name: RAFT_TRAILING_LOGS
+              value: {{ .Values.config.raftTrailingLogs | quote }}
+            - name: RAFT_SNAPSHOT_INTERVAL
+              value: {{ .Values.config.raftSnapshotInterval | quote }}
+            - name: RAFT_SNAPSHOT_THRESHOLD
+              value: {{ .Values.config.raftSnapshotThreshold | quote }}
+            # ---- Cluster operation tuning ----
+            - name: RAFT_APPLY_TIMEOUT
+              value: {{ .Values.config.raftApplyTimeout | quote }}
+            - name: RAFT_RECONCILE_INTERVAL
+              value: {{ .Values.config.raftReconcileInterval | quote }}
+            - name: RAFT_JOIN_RETRY_INTERVAL
+              value: {{ .Values.config.raftJoinRetryInterval | quote }}
+            - name: RAFT_JOIN_MAX_RETRIES
+              value: {{ .Values.config.raftJoinMaxRetries | quote }}
+            # ---- Kubernetes / Raft peer discovery ----
+            - name: K8S_HEADLESS_SERVICE
+              value: {{ include "url-shortener.headlessServiceName" . | quote }}
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # ---- Downward API ----
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          lifecycle:
+            preStop:
+              exec:
+                # Sleep briefly so the readiness probe marks us unready before
+                # K8s removes us from endpoints, preventing new traffic.
+                command: ["/bin/sh", "-c", "sleep 5"]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storage.storageClassName }}
+        storageClassName: {{ .Values.storage.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}

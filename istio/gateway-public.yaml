@@ -1,0 +1,15 @@
+# See TEACHING.md for detailed explanation
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: url-shortener-gateway
+  namespace: url-shortener
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts: ["*"]
